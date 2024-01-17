@@ -1,0 +1,126 @@
+---
+title: "RNAseq Analysis comparing primary Hematopoietic cells to MLL-ENL progenitors and macrophages"
+author: "Alexander Fischer"
+date: "12 2023"
+output: html_document
+---
+
+# Loading libraries needed for data processing and analysis
+```{r, echo = FALSE, include = FALSE}
+library(edgeR)
+library(ggplot2)
+library(ggrepel)
+library(RColorBrewer)
+library(dplyr)
+library(readr)
+library(tidyr)
+library(gridExtra)
+```
+
+# Defining path variables at the start
+```{r}
+PROJDIR="/misc/data/analysis/" #main directory
+WORKDIR=file.path(PROJDIR,"HematopoieticCell_Comp")
+ANALDIR=file.path(WORKDIR,"Analysis") #output of analysis results
+FIGDIR=file.path(WORKDIR,"Plots") #output of figure directories
+MDn="RNAseq_MLL_ENL_hemCellcomp.metadata.txt"#file name of the metadata csv., fit for generating all vectors for annotation
+genesdf=file.path(WORKDIR,"gene.annotatation.dataframe.txt") #this is the path to table with the ShortTranscriptID for a fully functional annotation of the count table
+```
+
+# Reading in metadata
+```{r}
+#reading in the metadata file as a pilot
+metad<-read.table(file.path(WORKDIR,MDn),header=T)
+#define factors for groups etc using the metadatafile
+groupordervec<-c("CD34_d2","CD34_d4","CD34_d7","CD34_d14","CD34_adult","Mono","MoDC","MoMAC","MoMAC_LPS","DDMLLENL_plusShield1","DDMLLENL_noShield1")
+Celltype<-factor(as.character(metad$Celltype),levels=groupordervec) #cave: level adjustment
+donor<-factor(as.character(metad$donor))
+labelID<-factor(as.character(metad$plotID))
+```
+
+# Reading in counts and gene anotation information
+```{r}
+#genes dataframe
+genes.df<-read.table(genesdf)
+#raw counts
+counts<-read.table(file=file.path(ANALDIR,"RNAseq_MLL_ENL_hemCellcomp.raw.counts.txt"))
+```
+
+# Generation of DGEList object an normalized counts with all samples
+```{r}
+dgel <- DGEList(counts = counts, group = Celltype, genes = genes.df)
+dgel
+##Filtering of DGEList object
+keep <- rowSums(cpm(dgel)>1) >= 4
+dgel <- dgel[keep, , keep.lib.sizes=FALSE]
+dgel <- calcNormFactors(dgel)
+summary(keep)
+dgel$samples
+
+## cpm, log.cpm generation,Zscore transformation
+d.raw.cpm <- cpm(dgel, normalized.lib.sizes = TRUE) #non-log-transformed cpms
+d.log.cpm <- cpm(dgel, prior.count = 2, log = TRUE) #log-transformed cpms 
+
+write.table(d.log.cpm,file=file.path(ANALDIR,"RNAseq_MLL_ENL_hemCellcomp.log.cpm.txt"),sep = "\t",col.names=TRUE, quote=FALSE)
+
+##rpkms
+d.raw.rpkm <- rpkm(dgel, normalized.lib.sizes = TRUE)
+d.log.rpkm <- rpkm(dgel, prior.count = 2, normalized.lib.sizes = TRUE, log = TRUE)
+```
+
+# Clustering of the data
+## PCA function
+```{r}
+colorscaleprim<-c("CD34_d2" = "salmon", "CD34_d4" = "firebrick3","CD34_d7"="firebrick1","CD34_d14" = "lightsalmon", "CD34_adult"="lightsalmon3",
+"Mono" = "steelblue1","MoDC"="steelblue3","MoMAC"="darkgoldenrod1","MoMAC_LPS"="darkgoldenrod3",
+"DDMLLENL_plusShield1"="springgreen1","DDMLLENL_noShield1"="springgreen3")
+
+
+#function for PCA with default parameters (defualt is PC1 vs PC2)
+PCAfunc<-function(data,legpos="right",colscale=colorscaleprim,celltypevec=Celltype,pchsize=4,labels="",PCX=1,PCY=2){
+prin_comp.d01corr <- prcomp(data, scale. = T)
+std_dev.d01corr <- prin_comp.d01corr$sdev
+pr_var.d01corr <- std_dev.d01corr^2
+prop_varex.d01corr <- round(100*pr_var.d01corr/sum(pr_var.d01corr), digits=1)
+embeddingPCA <- as.data.frame(prin_comp.d01corr$rotation)
+embeddingPCA$ct <- as.factor(celltypevec)
+embeddingPCA2<-embeddingPCA[,c(paste0("PC",PCX),paste0("PC",PCY),"ct")]
+colnames(embeddingPCA2)<-c("PCx","PCy","ct")
+PCA.p <- ggplot(embeddingPCA2, aes(x=PCx, y=PCy)) +
+    geom_point(size=pchsize, aes(colour=ct)) + 
+    scale_color_manual(values = colscale, name="CellType") +
+    geom_text_repel(aes(label=labels),size=4,segment.size=0.2,min.segment.length=0.0,point.padding=.05,segment.alpha=0.5,max.overlaps = 50,force = 2, show.legend = FALSE) +
+    labs(title = "PCA RNAseq")+ theme_light(base_size=16) +
+    theme(plot.tag=element_text(size = 12*2.0, face = "bold"),
+          plot.title = element_text(size = 12, face = "bold"),
+          plot.title.position = "panel",
+          legend.text = element_text(colour="black", size = 12, face = "plain"),
+          legend.title = element_text(colour="black", size = 12, face = "bold"),
+          legend.box.just = "top",
+          axis.text = element_text(colour = "black", size = 12, face = "plain"),
+          axis.title = element_text(colour = "black",size = 12,face = "plain"),
+          panel.grid = element_blank(),
+          panel.border = element_rect(colour = "black"),
+          axis.ticks = element_line(colour="black"),
+          aspect.ratio = 1.0,
+          legend.position = legpos)+
+     xlab(paste("PC",PCX,": " ,prop_varex.d01corr[PCX],"% of variance")) + ylab(paste("PC",PCY,": " ,prop_varex.d01corr[PCY],"% of variance"))
+}
+
+```
+
+## generate PCA
+```{r}
+dir.create(file.path(FIGDIR,"Clustering"))
+
+PCA1<-PCAfunc(d.log.cpm,pchsize=2)
+ggsave(PCA1,file=file.path(FIGDIR,"Clustering","PCA.allCelltypes.pdf"))
+PCA1l<-PCAfunc(d.log.cpm,pchsize=1,label=donor)
+ggsave(PCA1l,file=file.path(FIGDIR,"Clustering","PCA.allCelltypes.lab.pdf"))
+plot(PCA1)
+```
+
+## sessionInfo
+```{r}
+sessionInfo()
+```

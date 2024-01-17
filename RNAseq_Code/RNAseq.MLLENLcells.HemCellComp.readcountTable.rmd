@@ -1,0 +1,63 @@
+---
+title: "Read count table assembly for Hematopoietic cell comparison including MLL-ENL progenitors and macrophages"
+author: "Alexander Fischer"
+date: "12 2023"
+output: html_document
+---
+
+# Loading libraries needed for data processing and analysis
+```{r, echo = FALSE, include = FALSE}
+library(dplyr)
+library(readr)
+library(tidyr)
+```
+
+# Defining path variables at the start
+```{r}
+PROJDIR="/misc/data/analysis/" #main directory
+WORKDIR=file.path(PROJDIR,"HematopoieticCell_Comp")
+RPGDIR=file.path(WORKDIR,"ReadsPerGene") #input directory with the .txt files containing the reads per gene information
+ANALDIR=file.path(WORKDIR,"Analysis") #output of analysis results
+MDn=file.path(WORKDIR,"RNAseq_MLL_ENL_hemCellcomp.metadata.txt")#file name of the metadata csv., fit for generating all vectors for annotation
+STIDp=file.path(WORKDIR,"STAR_transcriptIDshort.txt") #this is the path to the ShortTranscriptID
+```
+
+# Reading in metadata
+```{r}
+#reading in the metadata file as a pilot
+metad<-read.csv(file.path(WORKDIR,MDn),header=T)
+```
+
+#  read in the short transcript IDs
+```{r}
+stid<-read.delim(STIDp,skip = 4,header = FALSE)[,1]
+```
+
+# Read count table (RCT) Assembly
+```{r}
+#reading in all file names using an input directory only containing the files of interest..the variable "reads per gene list"
+rpgl<-list.files(path = RPGDIR,pattern = "ReadsPerGene",ignore.case = FALSE) #reading in the filenames as a list
+#a sorting vector according to RNAseq_ID, later this will preserve the order when matching metadata information
+sortvec<-sapply(as.character(metad$X...ID), function(x) grep(paste0(x,"\\>"),rpgl))
+sortvec
+length(sortvec)
+#create an empty matrix as data frame, which can be written in in the following for-loop
+counts<-as.data.frame(matrix(),row.names = NULL)
+#in this forloop the read counts of the samples in the right order are extracted and appended to the counts data.frame
+for (i in sortvec) {
+rpgf<-read.delim(file.path(RPGDIR,rpgl[i]),sep = "\t",header = FALSE,check.names = TRUE,skip = 4,row.names = NULL)
+counts<-cbind(counts,rpgf[,4])
+}
+counts<-counts[,(-1)] #leaving out the empty column
+colnames(counts)<-metad$X...ID
+rownames(counts)<-stid
+ncol(counts) #all samples there?
+head(counts)
+```
+
+# write/read txt file for RCT
+```{r}
+write.table(counts,file=file.path(ANALDIR,"RNAseq_MLL_ENL_hemCellcomp.raw.counts.txt"),sep = "\t",col.names=TRUE, quote=FALSE)
+```
+
+
