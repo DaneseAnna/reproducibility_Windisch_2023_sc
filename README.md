@@ -6,5 +6,5 @@ Pipeline and rmd scripts used for bulk-RNAseq Analysis
 ### Paper citation: 
 (add link after publication)
 
-### data availability:
+### Data availability:
 ()
