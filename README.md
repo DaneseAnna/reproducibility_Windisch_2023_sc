@@ -3,4 +3,8 @@
 Notebooks and 10x Genomics Cell Ranger web summary files. 
 Pipline and rmd scripts used for bulk-RNAseq Analysis
 
-See paper (add link after publication)
+### Paper citation: 
+(add link after publication)
+
+### data availability:
+()
